@@ -1,0 +1,13 @@
+create table if not exists movies.m_name (
+movie_id int,
+movie_name varchar(50));
+
+insert into movies.m_name values
+(1,'Bullet Train'),
+(2,'Gray Man'),
+(3,'Top Gun'),
+(4,'Lightyear'),
+(5,'Beast'),
+(6,'Nope');
+
+select * from movies.m_name;
