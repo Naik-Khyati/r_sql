@@ -1,0 +1,128 @@
+---
+title: 'Assignment 2: SQL and R'
+author: "Khyati Naik"
+date: "`r Sys.Date()`"
+---
+
+### Load required packages
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(kableExtra)
+library(RMySQL)
+library(RODBC)
+```
+
+```{r sql_credentials, echo=FALSE}
+#user name and password for sql data base connection
+usr <- 'dum_usr'
+pwd <- 'dum_pwd'
+```
+
+### Connect to MYSQL movies schema
+
+```{r}
+sql_conn <- dbConnect(MySQL(), user= usr, password = pwd, dbname='movies', host='localhost')
+```
+
+Please click [here](https://github.com/Naik-Khyati/r_sql/tree/main/input_sql) to access SQL script to create the two tables in database. 
+
+### Read the movie rating csv and upload it as a table into movies schema
+  Read the rating table in r data frame
+
+```{r}
+m_rating_tb = read.csv("https://raw.githubusercontent.com/Naik-Khyati/r_sql/main/input_data/m_rating.csv")
+dbWriteTable(sql_conn,"m_rating",m_rating_tb, row.names = FALSE, overwrite = TRUE)
+m_rating_dt <- dbGetQuery(sql_conn, 'SELECT * FROM m_rating')
+```
+
+### Read the movie name csv and upload it as a table into movies schema
+  Read the movie name table in r data frame
+
+```{r}
+m_name_tb = read.csv("https://raw.githubusercontent.com/Naik-Khyati/r_sql/main/input_data/m_name.csv")
+dbWriteTable(sql_conn,"m_name",m_name_tb, row.names = FALSE, overwrite = TRUE)
+m_name_dt <- dbGetQuery(sql_conn, 'SELECT * FROM m_name')
+```
+
+### Join movie rating and movie name tables
+
+```{r}
+m_rating_dt <- left_join(m_rating_dt, m_name_dt, by='movie_id')
+```
+
+### Replace missing values (NA) with 0
+
+```{r}
+m_rating_dt[is.na(m_rating_dt)] <- 0
+```
+
+### Create a rating column from 5 rating category columns
+
+```{r}
+m_rating_dt <- m_rating_dt %>% mutate(rating=pmax(rating1,rating2,rating3,rating4,rating5))
+```
+
+### Find the unique values in the data frame for rating
+  Note that rating=0 represents missing values. As shown in below table, there are 13 movies with missing rating in the dataframe.
+  
+```{r}
+m_rating_dt %>% filter (rating==0) %>% group_by(name) %>% summarise(Freq = n())
+```
+
+
+### Replace missing values
+  There can be multiple ways to deal with missing values.
+  
+ *    Delete the records with missing values
+ *    Replace missing values with mean/median
+ *    Use some model to predict the values for missing values  
+  
+**In this data frame, we are going to replace the missing values with average rating for corresponding respondent.**    
+  
+  Below code snippet creates a data frame with average rating by the respondent considering only movies with non missing rating.  
+   
+```{r}
+missing_values_rep <- m_rating_dt %>% filter (rating!=0) %>% group_by(name) %>% summarise(Freq = n(),avg_rating = min(5,ceiling(mean(rating)))) %>% ungroup()
+```
+
+### Join the missing values data frame with movie rating data frame
+```{r}
+m_rating_dt <- left_join(m_rating_dt, missing_values_rep, by='name')
+```
+
+### Replace the missing rating value with average rating of that respondent
+
+```{r}
+m_rating_dt <- m_rating_dt %>%
+    mutate(final_rating = ifelse(rating == 0, avg_rating, rating))
+```
+
+
+### Validate that data frame does not have missing values (i.e. final_rating=0 should not exist)
+
+```{r table_final_rating}
+table(m_rating_dt$final_rating)
+```
+
+### Get chart data
+Create aggregated data frame for movie name by average rating
+
+```{r get_chart_data}
+chart_data <- m_rating_dt %>% group_by (movie_name) %>% summarise(avg_rating=mean(final_rating))%>%ungroup()
+```
+
+### Plot the chart
+
+```{r create_chart}
+ggplot(chart_data, aes(x = movie_name, y = avg_rating, fill = movie_name)) + 
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(avg_rating,digits=2)), vjust = 0) +
+  labs(title="Average Movie Rating", x= "Movie", y = "Average Rating") +
+  theme_void()+ theme(plot.title=element_text(hjust=0.5))
+```
+
+### Conclusion
+*   In this assignment, we created two tables in movies database. Then, we read those data tables in R data frame. Next we were able to join movie rating and movie name data frames.  
+*   We found that there were 13 records with missing rating in the data frame. Hence, we replaced the missing rating values with average rating values of individual respondents.  
+*   Finally, we plotted a bar chart of movies vs avg rating to find that gray man has the highest average rating and bullet train movie has least average rating.
